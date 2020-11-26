@@ -9,6 +9,17 @@ static char petscrc[] = "petscrc";
 
 struct amgx_struct{
     AmgXSolver solver;
+    const PetscInt      *colIndices=nullptr,
+                        *rowOffsets=nullptr;
+
+    PetscScalar         *values;
+    PetscInt            nRowsLocal,
+                        nRowsGlobal,
+                        nNz;
+
+    double              *lhs,
+                        *rhs; 
+
 };
 
 
@@ -17,54 +28,76 @@ extern "C" void terminate_solver_amgx(amgx_struct *& amgx){
     amgx->solver.finalize();
     return;
 }
-extern "C" void init_amgx(amgx_struct *& amgx,  MPI_Fint *amgxcomm){
+extern "C" void init_amgx(amgx_struct *& amgx,  MPI_Fint *amgxcomm, int which){
     MPI_Comm Ccomm = MPI_Comm_f2c(*amgxcomm);	
-    amgx->solver.initialize(Ccomm,"dDDI","amgx.conf");
+    printf("INIT AMGX %d %d\n", which);
+    if(which==1)
+       amgx->solver.initialize(Ccomm,"dDDI","amgx.poisson");
+    if(which==2)
+       amgx->solver.initialize(Ccomm,"dDDI","amgx.ampere");
 
     return;
 }
-
-extern "C" void solve_amgx(amgx_struct *& amgx, Mat  *A,Vec *rhs_petsc, Vec  *lhs_petsc){
+extern "C" void set_amgx(amgx_struct *& amgx, Mat  *A){
+    double t1, t2, t3, t4;
     PetscReal norm;
-    double t1, t2, t3, t4, t5, t6;
-    const PetscInt      *colIndices = nullptr,
-                            *rowOffsets = nullptr;
-
-    PetscScalar         *values;
-
-    PetscInt            nRowsLocal,
-                        nRowsGlobal,
-                        nNz;
-    double              *lhs,
-                        *rhs; 
-
-
-    //amgx->solver.setA(*A);
     t1 = MPI_Wtime();
-    petscToCSR(*A, nRowsLocal, nRowsGlobal, nNz, rowOffsets, colIndices, values, lhs, rhs, *lhs_petsc, *rhs_petsc);
+    //amgx->solver.setA(amgx->A);
+    amgx->solver.setA(*A);
     t2 = MPI_Wtime();
-    amgx->solver.setA(nRowsGlobal, nRowsLocal, nNz, rowOffsets, colIndices, values, nullptr);
-    t3 = MPI_Wtime();
-    amgx->solver.updateA( nRowsLocal, nNz, values);
-    t4 = MPI_Wtime();
-    amgx->solver.solve(lhs, rhs, nRowsLocal);
-    t5 = MPI_Wtime();
-    //amgx->solver.solve(*lhs, *rhs);
-    printf("Timers: petscToCSR SetA UpdateA Solve %f %f %f %f\n", t2-t1, t3-t2, t4-t3, t5-t4);
     //VecNorm(*lhs,  NORM_2, &norm);
     return;
 }
+extern "C" void set_amgx_new(amgx_struct *& amgx, Mat  *A,Vec *rhs_petsc, Vec  *lhs_petsc, MPI_Fint *amgxcomm){
+    MPI_Comm Ccomm = MPI_Comm_f2c(*amgxcomm);	
+    petscToCSR(Ccomm, *A, amgx->nRowsLocal, amgx->nRowsGlobal, amgx->nNz, amgx->rowOffsets, amgx->colIndices, amgx->values, amgx->lhs, amgx->rhs, *lhs_petsc, *rhs_petsc);
+    amgx->solver.setA(amgx->nRowsGlobal, amgx->nRowsLocal, amgx->nNz, amgx->rowOffsets, amgx->colIndices, amgx->values, nullptr);
+    //petscToCSR(MPI_COMM_WORLD, *A, amgx->nRowsLocal, amgx->nRowsGlobal, amgx->nNz, amgx->rowOffsets, amgx->colIndices, amgx->values, amgx->lhs, amgx->rhs, *lhs_petsc, *rhs_petsc);
+    //amgx->solver.setA(amgx->nRowsGlobal, amgx->nRowsLocal, amgx->nNz, amgx->rowOffsets, amgx->colIndices, amgx->values, nullptr);
+    //amgx->solver.solve(amgx->lhs, amgx->rhs, amgx->nRowsLocal);
+    //printf("AAAAAAA %d %d %d\n", amgx->nRowsLocal, amgx->nRowsGlobal, amgx->nNz);
 
-extern "C" void getiters_amgx(amgx_struct *& amgx, int *iterations){
-    amgx->solver.getIters(*iterations);	
-    return;    
+}
+extern "C" void update_amgx_new(amgx_struct *& amgx){
+    amgx->solver.updateA(amgx->nRowsLocal, amgx->nNz, amgx->values);
+    return;
+
+}
+extern "C" void solve_amgx_new(amgx_struct *& amgx){
+    amgx->solver.solve(amgx->lhs, amgx->rhs, amgx->nRowsLocal);
+    return;
+}
+extern "C" void solve_amgx(amgx_struct *& amgx, Vec *rhs, Vec *lhs){
+    double t1, t2, t3, t4;
+    PetscReal norm;
+    t3 = MPI_Wtime();
+    amgx->solver.solve(*lhs, *rhs);
+    t4 = MPI_Wtime();
+    VecNorm(*lhs,  NORM_2, &norm);
+    return;
 }
 extern "C" void allocate_amgx_struct(amgx_struct *& amgx){
    amgx = new amgx_struct();
    return;
 }
-
 /*
+extern "C" void solve_amgx(amgx_struct *& amgx, Mat  *A, Vec *rhs, Vec *lhs){
+    double t1, t2, t3, t4;
+    PetscReal norm;
+    t1 = MPI_Wtime();
+    //amgx->solver.setA(amgx->A);
+    amgx->solver.setA(*A);
+    t2 = MPI_Wtime();
+    t3 = MPI_Wtime();
+    amgx->solver.solve(*lhs, *rhs);
+    t4 = MPI_Wtime();
+    printf("Setup_time Solve_time %f %f\n",t2-t1,t4-t3);
+    VecNorm(*lhs,  NORM_2, &norm);
+    return;
+}
+*/
+
+   /*
 extern "C" void  prepare_for_solver(amgx_struct *& amgx, char *input_mat, char *input_rhs){
     PetscViewer fd;
 //amgx = new amgx_struct();
@@ -86,6 +119,7 @@ extern "C" void  prepare_for_solver(amgx_struct *& amgx, char *input_mat, char *
     VecSetFromOptions(amgx->lhs);
     return ;
 }
+
 extern "C" void solver_amgx_(char *input_mat, char *input_rhs, MPI_Fint *amgxcomm){
     double t1, t2, t3, t4;
     int rank, size;

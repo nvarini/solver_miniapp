@@ -30,6 +30,7 @@
 #include <cstring>
 
 PetscErrorCode petscToCSR(
+    MPI_Comm comm,
     Mat &A,
     PetscInt& nRowsLocal,
     PetscInt& nRowsGlobal,
@@ -64,7 +65,7 @@ PetscErrorCode petscToCSR(
     }
     else
     {
-        SETERRQ1(PETSC_COMM_WORLD, PETSC_ERR_ARG_WRONG,
+        SETERRQ1(comm, PETSC_ERR_ARG_WRONG,
                  "Mat type %s is not supported!\n", type);
     }
 
@@ -79,7 +80,7 @@ PetscErrorCode petscToCSR(
     ierr = VecGetArray(rhs_petsc, &rhs); CHKERRQ(ierr);
 
     // Calculate the number of rows in nRowsGlobal
-    ierr = MPI_Allreduce(&nRowsLocal, &nRowsGlobal, 1, MPI_INT, MPI_SUM, PETSC_COMM_WORLD); CHKERRQ(ierr);
+    ierr = MPI_Allreduce(&nRowsLocal, &nRowsGlobal, 1, MPI_INT, MPI_SUM, comm); CHKERRQ(ierr);
 
     // Store the number of non-zeros
     nNz = rowOffsets[nRowsLocal];

@@ -35,6 +35,7 @@
 
 
 PetscErrorCode petscToCSR(
+    MPI_Comm comm,
     Mat &A,
     PetscInt& nRowsLocal,
     PetscInt& nRowsGlobal,
